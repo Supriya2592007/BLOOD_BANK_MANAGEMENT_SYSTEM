@@ -7,5 +7,6 @@ CREATE TABLE users (
     phone VARCHAR(15),
     address VARCHAR(100),
     username VARCHAR(30) UNIQUE,
-    password VARCHAR(30)
+    password VARCHAR(30),
+    role varchar(50)
 );
