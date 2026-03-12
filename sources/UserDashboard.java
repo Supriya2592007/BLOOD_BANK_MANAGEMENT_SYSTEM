@@ -79,7 +79,7 @@ public class UserDashboard extends JFrame {
             btn.addActionListener(e -> {
                 if (item.equals("Logout")) {
                     dispose();
-                    new LoginFrame().setVisible(true);
+                    new UserLoginFrame("User").setVisible(true);
                 } else {
                     cardLayout.show(contentPanel, item);
                     refreshAllData();
@@ -199,22 +199,136 @@ public class UserDashboard extends JFrame {
         return panel;
     }
 
+    // --- VIEW 3: REQUEST BLOOD FORM ---
     private JPanel createRequestView() {
-        JPanel panel = new JPanel(null); panel.setOpaque(false);
+        JPanel panel = new JPanel(null);
+        panel.setOpaque(false);
+
         JLabel title = new JLabel("Submit New Blood Request");
-        title.setFont(new Font("Arial", Font.BOLD, 22));
-        title.setBounds(50, 20, 400, 30);
+        title.setFont(new Font("Arial", Font.BOLD, 28));
+        title.setForeground(new Color(120, 0, 0)); // Title color matching rest of dashboard
+        title.setBounds(20, 10, 500, 40);
         panel.add(title);
-        // Form layout as seen in image_4f3976.png logic
+
+        // --- ROUNDED FORM CONTAINER (REUSING FROM "ADD CAMP") ---
+        JPanel form = createRoundedFormContainer(20, 70, 500, 300);
+        form.setLayout(new GridLayout(4, 1, 10, 10)); // Simple GridLayout for fields
+        panel.add(form);
+
+        // Input Fields (with placeholders matching your design)
+        JComboBox<String> comboGroup = new JComboBox<>(new String[]{"A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"});
+        JTextField txtUnits = new JTextField("");
+        JTextField txtContact = new JTextField("");
+
+        // Setting placeholders or default text
+        txtUnits.setForeground(Color.GRAY);
+        txtContact.setForeground(Color.GRAY);
+
+        // Form Fields (Label and Input)
+        form.add(new JLabel("Blood Group:")); 
+        form.add(comboGroup);
+        form.add(new JLabel("Units Required:")); 
+        form.add(txtUnits);
+        form.add(new JLabel("Contact Number:")); 
+        form.add(txtContact); // REPLACED: Reason with Contact Number
+
+        // --- SUBMIT BUTTON WITH ROUNDED CORNERS ---
+        JButton btnSubmit = new JButton("Submit Request") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Fill vibrant red background with rounded corners
+                g2.setColor(new Color(180, 0, 0)); // Vibrant Red matching header
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 30, 30);
+                
+                g2.dispose();
+                super.paintComponent(g); // Draw text on top
+            }
+        };
+
+        btnSubmit.setBounds(20, 390, 200, 45); // Positioning below the form
+        btnSubmit.setContentAreaFilled(false);
+        btnSubmit.setFocusPainted(false);
+        btnSubmit.setBorderPainted(false); // Clean rounded button look
+        btnSubmit.setForeground(Color.WHITE);
+        btnSubmit.setFont(new Font("Arial", Font.BOLD, 16));
+        btnSubmit.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btnSubmit.addActionListener(e -> {
+            String bGroup = comboGroup.getSelectedItem().toString();
+            String units = txtUnits.getText();
+            String contact = txtContact.getText();
+
+            // Input Validation
+            if (units.isEmpty() || contact.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Please fill all fields!", "Missing Info", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            submitRequestToDB(bGroup, units, contact);
+        });
+
+        panel.add(btnSubmit);
         return panel;
     }
 
-    private JPanel createContactView() {
-        JPanel panel = new JPanel(null); panel.setOpaque(false);
-        String[] cols = {"Name", "Phone", "Email"};
+    private void submitRequestToDB(String group, String units, String contact) {
+        // Use exact column names from your database schema (image_0cf9a2.png)
+        try (Connection conn = DbConnection.connect()) {
+            String sql = "INSERT INTO blood_requests (requester_name, blood_group, units_required, requester_type, contact_number, status, request_date) VALUES (?, ?, ?, 'User', ?, 'Pending', CURDATE())";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, userName); // Matches requester_name
+            ps.setString(2, group);
+            ps.setInt(3, Integer.parseInt(units));
+            ps.setString(4, contact); // Sets the contact_number
+            
+            ps.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Request Submitted Successfully!");
+            
+            // Navigate back to profile and refresh history
+            cardLayout.show(contentPanel, "My Profile");
+            refreshAllData(); // Method to reload your tables
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(this, "Database Error: " + ex.getMessage());
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Error: Units must be a number!");
+        }
+    }
+   private JPanel createContactView() {
+        JPanel panel = new JPanel(null);
+        panel.setOpaque(false);
+
+        JLabel title = new JLabel("Contact Admin Staff");
+        title.setFont(new Font("Arial", Font.BOLD, 26));
+        title.setForeground(new Color(150, 0, 0));
+        title.setBounds(20, 10, 400, 40);
+        panel.add(title);
+
+        // Updated columns: Removed Email, kept only Name and Phone
+        String[] cols = {"Staff Name", "Contact Number"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         JTable table = styleTable(new JTable(model));
-        panel.add(createTableScroll(table, 20, 60, 700, 400));
+        
+        panel.add(createTableScroll(table, 20, 70, 700, 400));
+
+        // Load only the necessary columns from the database
+        try (Connection conn = DbConnection.connect()) {
+            // Selecting only name and contact info
+            String sql = "SELECT name, phone FROM users WHERE role = 'Admin'";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ResultSet rs = ps.executeQuery();
+            
+            while (rs.next()) { // Fixed the "Before start of result set" error
+                model.addRow(new Object[]{
+                    rs.getString("name"), 
+                    rs.getString("phone")
+                });
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
         return panel;
     }
 
@@ -234,6 +348,27 @@ public class UserDashboard extends JFrame {
         sp.setBorder(BorderFactory.createLineBorder(new Color(180, 0, 0), 1));
         return sp;
     }
-
+private JPanel createRoundedFormContainer(int x, int y, int w, int h) {
+    JPanel container = new JPanel(null) {
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            // White background
+            g2.setColor(Color.WHITE);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 40, 40);
+            
+            // Red Border (Matches your "Add Camp" style)
+            g2.setColor(new Color(160, 20, 20)); 
+            g2.setStroke(new BasicStroke(3));
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 40, 40);
+            g2.dispose();
+        }
+    };
+    container.setOpaque(false);
+    container.setBounds(x, y, w, h);
+    container.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    return container;
+}
     private void refreshAllData() { loadProfileData(); }
 }
