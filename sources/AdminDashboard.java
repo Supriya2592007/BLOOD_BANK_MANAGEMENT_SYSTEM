@@ -7,9 +7,7 @@ import java.sql.*;
 
 public class AdminDashboard extends JFrame {
     private Image bgImage;
-    private JLabel lblTotalUnits;
-    private JLabel lblTotalreqs;
-    private JLabel lblTotalcamps;
+    private JLabel lblTotalUnits, lblTotalreqs, lblTotalcamps;
     private JPanel contentPanel;
     private CardLayout cardLayout;
 
@@ -17,7 +15,7 @@ public class AdminDashboard extends JFrame {
         bgImage = new ImageIcon("BBMS_BACKGROUND.jpeg").getImage();
 
         setTitle("BBMS - Administrator Command Center");
-        setSize(1100, 750);
+        setSize(1150, 750);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setResizable(false);
@@ -35,7 +33,7 @@ public class AdminDashboard extends JFrame {
         };
         setContentPane(bgPanel);
 
-        // --- SIDEBAR (Deep Red) ---
+        // --- SIDEBAR ---
         JPanel sidebar = new JPanel(null) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -59,25 +57,27 @@ public class AdminDashboard extends JFrame {
         // --- CONTENT PANEL ---
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
-        contentPanel.setBounds(300, 50, 750, 630);
+        contentPanel.setBounds(300, 50, 800, 630);
         contentPanel.setOpaque(false);
         bgPanel.add(contentPanel);
 
-        // Adding Views
+        // Adding All Views
         contentPanel.add(createDashboardView(), "Dashboard");
         contentPanel.add(createInventoryView(), "Inventory");
-        contentPanel.add(createRequestsView(), "Blood Requests");
+        contentPanel.add(createRequestsView(), "User Requests");
+        contentPanel.add(createHospitalRequestsView(), "Manage Hospitals");
+        contentPanel.add(createAddDonorView(), "Add Donor");
         contentPanel.add(createCampsView(), "Blood Camps");
         contentPanel.add(createAddCampView(), "Add Blood Camp");
-        // --- NAVIGATION BUTTONS ---
-        // Inside AdminDashboard constructor
-     String[] menuItems = {"Dashboard", "Inventory", "Blood Requests", "Blood Camps", "Add Blood Camp", "Logout"};
-        int btnY = 150;
+
+        // --- NAVIGATION ---
+        String[] menuItems = {"Dashboard", "Inventory", "User Requests", "Manage Hospitals", "Add Donor", "Blood Camps", "Add Blood Camp", "Logout"};
+        int btnY = 110;
         for (String item : menuItems) {
             LightPinkButton btn = new LightPinkButton(item);
-            btn.setBounds(40, btnY, 180, 45);
+            btn.setBounds(40, btnY, 180, 40);
             sidebar.add(btn);
-            btnY += 60;
+            btnY += 50;
 
             btn.addActionListener(e -> {
                 String cmd = e.getActionCommand();
@@ -86,33 +86,172 @@ public class AdminDashboard extends JFrame {
                     new UserLoginFrame("Admin").setVisible(true);
                 } else {
                     cardLayout.show(contentPanel, cmd);
-                    if (cmd.equals("Dashboard")) fetchLiveStock();
+                    updateAllLiveCounts();
                 }
             });
         }
-        
-        fetchLiveStock();
+        updateAllLiveCounts();
     }
 
+    // --- 1. DASHBOARD VIEW (FIXED LABELS) ---
     private JPanel createDashboardView() {
         JPanel panel = new JPanel(null);
         panel.setOpaque(false);
         JLabel welcome = new JLabel("Welcome, Administrator");
-        welcome.setBounds(0, 0, 500, 40);
+        welcome.setBounds(0, 0, 500, 45);
         welcome.setFont(new Font("Arial", Font.BOLD, 36));
         welcome.setForeground(new Color(120, 0, 0));
         panel.add(welcome);
 
         lblTotalUnits = new JLabel("0", SwingConstants.CENTER);
         panel.add(createCard("Total Units in Stock", lblTotalUnits, 0, 80, Color.BLUE));
-         lblTotalreqs = new JLabel("0", SwingConstants.CENTER);
-        panel.add(createCard("Active Requests", lblTotalreqs, 250, 80, Color.ORANGE));
-         lblTotalcamps = new JLabel("0", SwingConstants.CENTER);
-        panel.add(createCard("Upcoming Camps", lblTotalcamps, 500, 80, new Color(0, 150, 0)));
+        lblTotalreqs = new JLabel("0", SwingConstants.CENTER);
+        panel.add(createCard("Active Requests", lblTotalreqs, 260, 80, Color.ORANGE));
+        lblTotalcamps = new JLabel("0", SwingConstants.CENTER);
+        panel.add(createCard("Upcoming Camps", lblTotalcamps, 520, 80, new Color(0, 150, 0)));
         return panel;
     }
 
-    private JPanel createInventoryView() {
+    // --- 2. ADD DONOR MODULE (WITH TRANSACTION LOGIC) ---
+    private JPanel createAddDonorView() {
+        JPanel panel = new JPanel(null);
+        panel.setOpaque(false);
+        JLabel title = new JLabel("Record New Donation");
+        title.setFont(new Font("Arial", Font.BOLD, 28));
+        title.setBounds(20, 10, 400, 40);
+        title.setForeground(new Color(120, 0, 0));
+       // title.setOpaque(true);
+        panel.add(title);
+
+        JPanel form = createRoundedTableContainer(20, 70, 500, 350);
+        form.setLayout(new GridLayout(5, 2, 10, 25));
+        
+        JTextField tName = new JTextField();
+        JComboBox<String> cbGroup = new JComboBox<>(new String[]{"A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"});
+        JTextField tUnits = new JTextField();
+        JTextField tPhone = new JTextField();
+
+        form.add(new JLabel("Donor Name:")); form.add(tName);
+        form.add(new JLabel("Blood Group:")); form.add(cbGroup);
+        form.add(new JLabel("Units (ml):")); form.add(tUnits);
+        form.add(new JLabel("Phone:")); form.add(tPhone);
+
+        JButton btnSave = new JButton("Save & Update Stock");
+        btnSave.setBounds(20, 440, 220, 45);
+        btnSave.setBackground(new Color(120, 0, 0));
+        btnSave.setForeground(Color.WHITE);
+        btnSave.addActionListener(e -> {
+            try (Connection conn = DbConnection.connect()) {
+                conn.setAutoCommit(false);
+                PreparedStatement ps1 = conn.prepareStatement("INSERT INTO donors (name, blood_group, units, phone) VALUES (?,?,?,?)");
+                ps1.setString(1, tName.getText());
+                ps1.setString(2, cbGroup.getSelectedItem().toString());
+                ps1.setInt(3, Integer.parseInt(tUnits.getText()));
+                ps1.setString(4, tPhone.getText());
+                ps1.executeUpdate();
+
+                PreparedStatement ps2 = conn.prepareStatement("UPDATE blood_stock SET units_available = units_available + ? WHERE blood_group = ?");
+                ps2.setInt(1, Integer.parseInt(tUnits.getText()));
+                ps2.setString(2, cbGroup.getSelectedItem().toString());
+                ps2.executeUpdate();
+
+                conn.commit();
+                JOptionPane.showMessageDialog(this, "Success!");
+                updateAllLiveCounts();
+            } catch (Exception ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
+        });
+
+        panel.add(form); panel.add(btnSave);
+        return panel;
+    }
+
+    // --- 3. MANAGE HOSPITALS VIEW ---
+    private JPanel createHospitalRequestsView() {
+        JPanel panel = new JPanel(null);
+        panel.setOpaque(false);
+        JLabel title = new JLabel("Hospital Orders");
+        title.setFont(new Font("Arial", Font.BOLD, 28));
+        title.setBounds(20, 10, 400, 40);
+        panel.add(title);
+
+        JPanel container = createRoundedTableContainer(20, 70, 750, 400);
+        String[] cols = {"ID", "Hospital", "Group", "Units", "Status"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0);
+        JTable table = styleTable(new JTable(model));
+
+        try (Connection conn = DbConnection.connect()) {
+            String sql = "SELECT r.request_id, h.hospital_name, r.blood_group, r.units, r.status FROM Hospital_blood_requests r JOIN hospitals h ON r.hospital_id = h.hospital_id WHERE r.status='Pending'";
+            ResultSet rs = conn.createStatement().executeQuery(sql);
+            while(rs.next()) model.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3), rs.getInt(4), rs.getString(5)});
+        } catch (SQLException e) { e.printStackTrace(); }
+
+        container.add(new JScrollPane(table));
+        panel.add(container);
+
+        JButton btnApp = new JButton("Approve Hospital Request");
+        btnApp.setBounds(20, 490, 220, 45);
+        btnApp.setBackground(new Color(160, 20, 20));
+        btnApp.setForeground(Color.WHITE);
+        btnApp.addActionListener(e -> handleHospitalApproval(table, model));
+        panel.add(btnApp);
+        return panel;
+    }
+
+    private void handleHospitalApproval(JTable table, DefaultTableModel model) {
+        int row = table.getSelectedRow();
+        if (row == -1) return;
+        int id = (int) model.getValueAt(row, 0);
+        String grp = (String) model.getValueAt(row, 2);
+        int units = (int) model.getValueAt(row, 3);
+
+        try (Connection conn = DbConnection.connect()) {
+            PreparedStatement ps = conn.prepareStatement("SELECT units_available FROM blood_stock WHERE blood_group = ?");
+            ps.setString(1, grp);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next() && rs.getInt(1) >= units) {
+                conn.setAutoCommit(false);
+                conn.createStatement().executeUpdate("UPDATE blood_stock SET units_available = units_available - "+units+" WHERE blood_group = '"+grp+"'");
+                conn.createStatement().executeUpdate("UPDATE Hospital_blood_requests SET status = 'Approved' WHERE request_id = "+id);
+                conn.commit();
+                model.removeRow(row);
+                updateAllLiveCounts();
+                JOptionPane.showMessageDialog(this, "Approved!");
+            } else { JOptionPane.showMessageDialog(this, "Insufficient Stock!"); }
+        } catch (Exception ex) { ex.printStackTrace(); }
+    }
+
+    // --- UPDATED LIVE COUNT LOGIC ---
+    private void updateAllLiveCounts() {
+        fetchLiveStock();
+        act_req();
+        act_camps();
+    }
+
+    private void fetchLiveStock() {
+        try (Connection conn = DbConnection.connect()) {
+            ResultSet rs = conn.createStatement().executeQuery("SELECT SUM(units_available) FROM blood_stock");
+            if (rs.next()) lblTotalUnits.setText(String.valueOf(rs.getInt(1)));
+        } catch (Exception e) { lblTotalUnits.setText("0"); }
+    }
+
+    private void act_req() {
+        try (Connection conn = DbConnection.connect()) {
+            ResultSet rs1 = conn.createStatement().executeQuery("SELECT COUNT(*) FROM blood_requests WHERE status='Pending'");
+            int c1 = rs1.next() ? rs1.getInt(1) : 0;
+            ResultSet rs2 = conn.createStatement().executeQuery("SELECT COUNT(*) FROM Hospital_blood_requests WHERE status='Pending'");
+            int c2 = rs2.next() ? rs2.getInt(1) : 0;
+            lblTotalreqs.setText(String.valueOf(c1 + c2));
+        } catch (Exception e) { lblTotalreqs.setText("0"); }
+    }
+
+    private void act_camps() {
+        try (Connection conn = DbConnection.connect()) {
+            ResultSet rs = conn.createStatement().executeQuery("SELECT COUNT(*) FROM blood_camps");
+            if (rs.next()) lblTotalcamps.setText(String.valueOf(rs.getInt(1)));
+        } catch (Exception e) { lblTotalcamps.setText("0"); }
+    }
+
+     private JPanel createInventoryView() {
         JPanel mainPanel = new JPanel(null);
         mainPanel.setOpaque(false);
         JLabel title = new JLabel("Current Blood Stock Inventory");
@@ -379,8 +518,8 @@ public class AdminDashboard extends JFrame {
         container.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         return container;
     }
-
-    private JTable styleTable(JTable table) {
+    
+   private JTable styleTable(JTable table) {
         table.setRowHeight(35);
         table.setFont(new Font("Arial", Font.PLAIN, 15));
         table.getTableHeader().setBackground(new Color(160, 20, 20));
@@ -494,31 +633,4 @@ public class AdminDashboard extends JFrame {
         return card;
     }
 
-    private void fetchLiveStock() {
-        try (Connection conn = DbConnection.connect()) {
-            if (conn != null) {
-                String query = "SELECT SUM(units_available) FROM blood_stock";
-                ResultSet rs = conn.createStatement().executeQuery(query);
-               if (rs.next()) lblTotalUnits.setText(String.valueOf(rs.getInt(1)));
-            }
-        } catch (SQLException e) { lblTotalUnits.setText("0"); }
-    }
-    private void act_req() {
-        try (Connection conn = DbConnection.connect()) {
-            if (conn != null) {
-                String query = "SELECT COUNT(*) FROM blood_requests WHERE status='Pending'";
-                ResultSet rs = conn.createStatement().executeQuery(query);
-                if (rs.next()) lblTotalUnits.setText(String.valueOf(rs.getInt(1)));
-            }
-        } catch (SQLException e) { lblTotalreqs.setText("0"); }
-    }
-    private void act_camps() {
-        try (Connection conn = DbConnection.connect()) {
-            if (conn != null) {
-                String query = "SELECT COUNT(*) FROM blood_camps";
-                ResultSet rs = conn.createStatement().executeQuery(query);
-                if (rs.next()) lblTotalUnits.setText(String.valueOf(rs.getInt(1)));
-            }
-        } catch (SQLException e) { lblTotalcamps.setText("0"); }
-    }
 }
