@@ -83,6 +83,7 @@ public class AdminDashboard extends JFrame {
                 String cmd = e.getActionCommand();
                 if (cmd.equals("Logout")) {
                     this.dispose();
+                    new UserLoginFrame("Admin").setVisible(true);
                 } else {
                     cardLayout.show(contentPanel, cmd);
                     if (cmd.equals("Dashboard")) fetchLiveStock();
