@@ -79,7 +79,7 @@ public class UserDashboard extends JFrame {
             btn.addActionListener(e -> {
                 if (item.equals("Logout")) {
                     dispose();
-                    new UserLoginFrame("User").setVisible(true);
+                   new MainWindow().setVisible(true);
                 } else {
                     cardLayout.show(contentPanel, item);
                     refreshAllData();
