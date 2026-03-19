@@ -28,6 +28,11 @@ public class MainWindow extends JFrame {
         setContentPane(bgPanel);
 
         // --- TITLE ---
+         JLabel title1 = new JLabel("BLOOD BANK MANAGEMENT SYSTEM", SwingConstants.CENTER);
+        title1.setFont(new Font("Arial", Font.BOLD, 40));
+        title1.setForeground(new Color(150, 0, 0)); // Matches your theme
+        title1.setBounds(0, 70, 1100, 50);
+        bgPanel.add(title1);
         JLabel title = new JLabel("Select Your Login", SwingConstants.CENTER);
         title.setFont(new Font("Arial", Font.BOLD, 40));
         title.setForeground(new Color(150, 0, 0)); // Matches your theme
