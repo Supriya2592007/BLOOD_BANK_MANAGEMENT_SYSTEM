@@ -67,6 +67,7 @@ public class AdminDashboard extends JFrame {
         contentPanel.add(createRequestsView(), "User Requests");
         contentPanel.add(createHospitalRequestsView(), "Manage Hospitals");
         contentPanel.add(createAddDonorView(), "Add Donor");
+         contentPanel.add(createDonorView(), "View Donors");
         contentPanel.add(createCampsView(), "Blood Camps");
         contentPanel.add(createAddCampView(), "Add Blood Camp");
 
@@ -83,7 +84,7 @@ public class AdminDashboard extends JFrame {
                 String cmd = e.getActionCommand();
                 if (cmd.equals("Logout")) {
                     this.dispose();
-                    new UserLoginFrame("Admin").setVisible(true);
+                    new MainWindow().setVisible(true);;
                 } else {
                     cardLayout.show(contentPanel, cmd);
                     updateAllLiveCounts();
@@ -93,7 +94,6 @@ public class AdminDashboard extends JFrame {
         updateAllLiveCounts();
     }
 
-    // --- 1. DASHBOARD VIEW (FIXED LABELS) ---
     private JPanel createDashboardView() {
         JPanel panel = new JPanel(null);
         panel.setOpaque(false);
@@ -112,60 +112,93 @@ public class AdminDashboard extends JFrame {
         return panel;
     }
 
-    // --- 2. ADD DONOR MODULE (WITH TRANSACTION LOGIC) ---
+    // --- UPDATED ADD DONOR MODULE (SYNCED WITH USERS TABLE) ---
     private JPanel createAddDonorView() {
         JPanel panel = new JPanel(null);
         panel.setOpaque(false);
-        JLabel title = new JLabel("Record New Donation");
+        JLabel title = new JLabel("Record Donation & Register Donor");
         title.setFont(new Font("Arial", Font.BOLD, 28));
-        title.setBounds(20, 10, 400, 40);
+        title.setBounds(20, 10, 600, 40);
         title.setForeground(new Color(120, 0, 0));
-       // title.setOpaque(true);
         panel.add(title);
 
-        JPanel form = createRoundedTableContainer(20, 70, 500, 350);
-        form.setLayout(new GridLayout(5, 2, 10, 25));
+        JPanel form = createRoundedTableContainer(20, 70, 650, 480);
+        form.setLayout(new GridLayout(9, 2, 10, 15));
         
         JTextField tName = new JTextField();
+        JTextField tAge = new JTextField();
+        JComboBox<String> cbGender = new JComboBox<>(new String[]{"Male", "Female", "Other"});
         JComboBox<String> cbGroup = new JComboBox<>(new String[]{"A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"});
-        JTextField tUnits = new JTextField();
         JTextField tPhone = new JTextField();
+        JTextField tEmail = new JTextField();
+        JTextField tAddress = new JTextField();
+        JTextField tLastDonation = new JTextField("YYYY-MM-DD");
+        JTextField tUnits = new JTextField();
 
-        form.add(new JLabel("Donor Name:")); form.add(tName);
+        form.add(new JLabel("Full Name:")); form.add(tName);
+        form.add(new JLabel("Age:")); form.add(tAge);
+        form.add(new JLabel("Gender:")); form.add(cbGender);
         form.add(new JLabel("Blood Group:")); form.add(cbGroup);
-        form.add(new JLabel("Units (ml):")); form.add(tUnits);
-        form.add(new JLabel("Phone:")); form.add(tPhone);
+        form.add(new JLabel("Phone (Password):")); form.add(tPhone);
+        form.add(new JLabel("Email:")); form.add(tEmail);
+        form.add(new JLabel("Address:")); form.add(tAddress);
+        form.add(new JLabel("Last Donation:")); form.add(tLastDonation);
+        form.add(new JLabel("Units Donated (ml):")); form.add(tUnits);
 
-        JButton btnSave = new JButton("Save & Update Stock");
-        btnSave.setBounds(20, 440, 220, 45);
+        JButton btnSave = new JButton("Register Everything");
+        btnSave.setBounds(20, 560, 250, 45);
         btnSave.setBackground(new Color(120, 0, 0));
         btnSave.setForeground(Color.WHITE);
+
         btnSave.addActionListener(e -> {
             try (Connection conn = DbConnection.connect()) {
                 conn.setAutoCommit(false);
-                PreparedStatement ps1 = conn.prepareStatement("INSERT INTO donors (name, blood_group, units, phone) VALUES (?,?,?,?)");
+
+                // 1. Insert into 'donors' table
+                String donorQuery = "INSERT INTO donors (name, age, gender, blood_group, phone, email, address, last_donation_date) VALUES (?,?,?,?,?,?,?,?)";
+                PreparedStatement ps1 = conn.prepareStatement(donorQuery);
                 ps1.setString(1, tName.getText());
-                ps1.setString(2, cbGroup.getSelectedItem().toString());
-                ps1.setInt(3, Integer.parseInt(tUnits.getText()));
-                ps1.setString(4, tPhone.getText());
+                ps1.setInt(2, Integer.parseInt(tAge.getText()));
+                ps1.setString(3, cbGender.getSelectedItem().toString());
+                ps1.setString(4, cbGroup.getSelectedItem().toString());
+                ps1.setString(5, tPhone.getText());
+                ps1.setString(6, tEmail.getText());
+                ps1.setString(7, tAddress.getText());
+                String dateVal = tLastDonation.getText().equals("YYYY-MM-DD") ? null : tLastDonation.getText();
+                ps1.setString(8, dateVal);
                 ps1.executeUpdate();
 
+                // 2. Update Inventory
                 PreparedStatement ps2 = conn.prepareStatement("UPDATE blood_stock SET units_available = units_available + ? WHERE blood_group = ?");
                 ps2.setInt(1, Integer.parseInt(tUnits.getText()));
                 ps2.setString(2, cbGroup.getSelectedItem().toString());
                 ps2.executeUpdate();
 
+                // 3. Sync to 'users' table
+                PreparedStatement ps3 = conn.prepareStatement("INSERT INTO users (username, password, name, phone, blood_group, role) VALUES (?,?,?,?,?,?)");
+                ps3.setString(1, tName.getText());   // Username = Name
+                ps3.setString(2, tPhone.getText());  // Password = Phone
+                ps3.setString(3, tName.getText());
+                ps3.setString(4, tPhone.getText());
+                ps3.setString(5, cbGroup.getSelectedItem().toString());
+                ps3.setString(6, "USER");  // Default role
+                ps3.executeUpdate();
+
                 conn.commit();
-                JOptionPane.showMessageDialog(this, "Success!");
+                JOptionPane.showMessageDialog(this, "Success! Donor and User account created.\nLogin with Name and Phone.");
                 updateAllLiveCounts();
-            } catch (Exception ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
+                
+            } catch (Exception ex) { 
+                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); 
+                ex.printStackTrace();
+            }
         });
 
-        panel.add(form); panel.add(btnSave);
+        panel.add(form); 
+        panel.add(btnSave);
         return panel;
     }
 
-    // --- 3. MANAGE HOSPITALS VIEW ---
     private JPanel createHospitalRequestsView() {
         JPanel panel = new JPanel(null);
         panel.setOpaque(false);
@@ -194,6 +227,14 @@ public class AdminDashboard extends JFrame {
         btnApp.setForeground(Color.WHITE);
         btnApp.addActionListener(e -> handleHospitalApproval(table, model));
         panel.add(btnApp);
+
+         JButton btnreject = new JButton("Reject Selection");
+        btnreject.setBounds(290, 490, 220, 45);
+        btnreject.setBackground(new Color(210, 40, 40));
+        btnreject.setForeground(Color.WHITE);
+        btnreject.addActionListener(e -> RejectApproval(table, model,"Hospital"));
+        panel.add(btnreject);
+
         return panel;
     }
 
@@ -220,7 +261,6 @@ public class AdminDashboard extends JFrame {
         } catch (Exception ex) { ex.printStackTrace(); }
     }
 
-    // --- UPDATED LIVE COUNT LOGIC ---
     private void updateAllLiveCounts() {
         fetchLiveStock();
         act_req();
@@ -251,7 +291,7 @@ public class AdminDashboard extends JFrame {
         } catch (Exception e) { lblTotalcamps.setText("0"); }
     }
 
-     private JPanel createInventoryView() {
+    private JPanel createInventoryView() {
         JPanel mainPanel = new JPanel(null);
         mainPanel.setOpaque(false);
         JLabel title = new JLabel("Current Blood Stock Inventory");
@@ -267,7 +307,6 @@ public class AdminDashboard extends JFrame {
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         JTable table = styleTable(new JTable(model));
 
-        // Logic to load inventory data
         Runnable loadStock = () -> {
             model.setRowCount(0);
             try (Connection conn = DbConnection.connect()) {
@@ -280,20 +319,15 @@ public class AdminDashboard extends JFrame {
         };
 
         loadStock.run();
-
         tableContainer.add(new JScrollPane(table), BorderLayout.CENTER);
 
-        // REFRESH BUTTON ADDED
         JButton btnRefresh = new JButton("Refresh Stock");
         btnRefresh.setBounds(20, 400, 150, 40);
-        btnRefresh.setBackground(new Color(160, 20, 20)); // Matching Sidebar Red
+        btnRefresh.setBackground(new Color(160, 20, 20));
         btnRefresh.setForeground(Color.WHITE);
-        btnRefresh.setFocusPainted(false);
         btnRefresh.addActionListener(e -> {
             loadStock.run();
-            fetchLiveStock(); // Also update dashboard card
-            act_req();
-            act_camps();
+            updateAllLiveCounts();
             JOptionPane.showMessageDialog(this, "Inventory Updated!");
         });
         mainPanel.add(btnRefresh);
@@ -304,7 +338,6 @@ public class AdminDashboard extends JFrame {
     private JPanel createRequestsView() {
         JPanel mainPanel = new JPanel(null);
         mainPanel.setOpaque(false);
-
         JLabel title = new JLabel("Pending Blood Requests");
         title.setFont(new Font("Arial", Font.BOLD, 28));
         title.setForeground(new Color(120, 0, 0));
@@ -332,84 +365,107 @@ public class AdminDashboard extends JFrame {
         btnApprove.setBounds(20, 510, 200, 45);
         btnApprove.setBackground(new Color(210, 40, 40));
         btnApprove.setForeground(Color.WHITE);
-        btnApprove.setFont(new Font("Arial", Font.BOLD, 14));
         btnApprove.addActionListener(e -> handleApproval(table, model));
         mainPanel.add(btnApprove);
 
+         JButton btnreject = new JButton("Reject Selection");
+        btnreject.setBounds(270, 510, 200, 45);
+        btnreject.setBackground(new Color(210, 40, 40));
+        btnreject.setForeground(Color.WHITE);
+        btnreject.addActionListener(e -> RejectApproval(table, model,"User"));
+        mainPanel.add(btnreject);
+
         return mainPanel;
     }
-// --- VIEW 4: BLOOD CAMPS ---
+
     private JPanel createCampsView() {
         JPanel mainPanel = new JPanel(null);
         mainPanel.setOpaque(false);
-
-        // Title styling
         JLabel title = new JLabel("Upcoming Blood Donation Camps");
         title.setFont(new Font("Arial", Font.BOLD, 28));
         title.setForeground(new Color(120, 0, 0));
         title.setBounds(20, 10, 500, 40);
         mainPanel.add(title);
 
-        // Rounded Table Container
         JPanel tableContainer = createRoundedTableContainer(20, 70, 700, 320);
         mainPanel.add(tableContainer);
 
-        // Table Setup
         String[] cols = {"Camp ID", "Camp Name", "Location", "Date"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         JTable table = styleTable(new JTable(model));
 
-        // Logic to load Camp data
         Runnable loadCamps = () -> {
             model.setRowCount(0);
             try (Connection conn = DbConnection.connect()) {
-                // Adjust table/column names if they differ in your DB
                 String sql = "SELECT camp_id, camp_name, location, camp_date FROM blood_camps"; 
                 ResultSet rs = conn.createStatement().executeQuery(sql);
                 while (rs.next()) {
-                    model.addRow(new Object[]{
-                        rs.getInt(1), 
-                        rs.getString(2), 
-                        rs.getString(3), 
-                        rs.getString(4)
-                    });
+                    model.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3), rs.getString(4)});
                 }
-            } catch (SQLException e) { 
-                System.out.println("Camp Load Error: " + e.getMessage()); 
-            }
+            } catch (SQLException e) { System.out.println(e.getMessage()); }
         };
 
         loadCamps.run();
-
         tableContainer.add(new JScrollPane(table), BorderLayout.CENTER);
 
-        // REFRESH BUTTON (Matching Inventory style)
         JButton btnRefresh = new JButton("Refresh Camps");
         btnRefresh.setBounds(20, 400, 150, 40);
-        btnRefresh.setBackground(new Color(160, 20, 20)); // Sidebar Red
+        btnRefresh.setBackground(new Color(160, 20, 20));
         btnRefresh.setForeground(Color.WHITE);
-        btnRefresh.setFocusPainted(false);
-        btnRefresh.addActionListener(e -> {
-            loadCamps.run();
-            JOptionPane.showMessageDialog(this, "Camp Schedule Updated!");
-        });
+        btnRefresh.addActionListener(e -> { loadCamps.run(); });
+        mainPanel.add(btnRefresh);
+
+        return mainPanel;
+    }
+    private JPanel createDonorView() {
+        JPanel mainPanel = new JPanel(null);
+        mainPanel.setOpaque(false);
+        JLabel title = new JLabel("Donors");
+        title.setFont(new Font("Arial", Font.BOLD, 28));
+        title.setForeground(new Color(120, 0, 0));
+        title.setBounds(20, 10, 500, 40);
+        mainPanel.add(title);
+
+        JPanel tableContainer = createRoundedTableContainer(20, 70, 700, 320);
+        mainPanel.add(tableContainer);
+
+        String[] cols = {"Donor ID", "Donor Name", "Blood Group", "Contact no","Email"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0);
+        JTable table = styleTable(new JTable(model));
+
+        Runnable loadCamps = () -> {
+            model.setRowCount(0);
+            try (Connection conn = DbConnection.connect()) {
+                String sql = "SELECT donor_id, name, blood_group, phone,email FROM donors"; 
+                ResultSet rs = conn.createStatement().executeQuery(sql);
+                while (rs.next()) {
+                    model.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3), rs.getString(4),rs.getString(5)});
+                }
+            } catch (SQLException e) { System.out.println(e.getMessage()); }
+        };
+
+        loadCamps.run();
+        tableContainer.add(new JScrollPane(table), BorderLayout.CENTER);
+
+        JButton btnRefresh = new JButton("Refresh Donors");
+        btnRefresh.setBounds(20, 400, 150, 40);
+        btnRefresh.setBackground(new Color(160, 20, 20));
+        btnRefresh.setForeground(Color.WHITE);
+        btnRefresh.addActionListener(e -> { loadCamps.run(); });
         mainPanel.add(btnRefresh);
 
         return mainPanel;
     }
     
-    // --- VIEW 5: ADD BLOOD CAMP ---
     private JPanel createAddCampView() {
         JPanel mainPanel = new JPanel(null);
         mainPanel.setOpaque(false);
-
         JLabel title = new JLabel("Schedule New Blood Camp");
         title.setFont(new Font("Arial", Font.BOLD, 28));
         title.setForeground(new Color(120, 0, 0));
         title.setBounds(20, 10, 500, 40);
         mainPanel.add(title);
 
-        // --- ROUNDED FORM PANEL WITH RED BORDER ---
         JPanel formPanel = new JPanel(new GridLayout(6, 1, 10, 10)) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -417,22 +473,17 @@ public class AdminDashboard extends JFrame {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setColor(Color.WHITE);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 40, 40);
-                
-                // ADDED: Red border around the container (matches Card accent color)
-                g2.setColor(new Color(160, 20, 20)); // Deep Red
+                g2.setColor(new Color(160, 20, 20)); 
                 g2.setStroke(new BasicStroke(3));
                 g2.drawRoundRect(0, 0, getWidth()-1, getHeight()-1, 40, 40);
-                
                 g2.dispose();
             }
         };
         formPanel.setOpaque(false);
-        // Changed height/positioning for a tighter fit
         formPanel.setBounds(20, 70, 500, 380); 
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         mainPanel.add(formPanel);
 
-        // Input Fields
         JTextField txtName = new JTextField();
         JTextField txtLoc = new JTextField();
         JTextField txtDate = new JTextField("YYYY-MM-DD");
@@ -445,63 +496,30 @@ public class AdminDashboard extends JFrame {
         formPanel.add(new JLabel("Time:")); formPanel.add(txtTime);
         formPanel.add(new JLabel("Organizer:")); formPanel.add(txtOrg);
 
-        // --- CUSTOM ROUNDED RED BUTTON (Similar to LightPinkButton structure) ---
-        JButton btnSubmit = new JButton("Register Camp") {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                // Vibrant red background
-                g2.setColor(new Color(210, 40, 40)); 
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 25, 25);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        
-        btnSubmit.setBounds(20, 470, 200, 45); // Positioned below the container
-        btnSubmit.setContentAreaFilled(false);
-        btnSubmit.setFocusPainted(false);
-        btnSubmit.setBorderPainted(false);
+        JButton btnSubmit = new JButton("Register Camp");
+        btnSubmit.setBounds(20, 470, 200, 45); 
+        btnSubmit.setBackground(new Color(210, 40, 40));
         btnSubmit.setForeground(Color.WHITE);
-        btnSubmit.setFont(new Font("Arial", Font.BOLD, 14));
-        btnSubmit.setCursor(new Cursor(Cursor.HAND_CURSOR));
         
         btnSubmit.addActionListener(e -> {
-            String date = txtDate.getText();
             try (Connection conn = DbConnection.connect()) {
-                // Conflict Checking: Ensure no other camp is on the same date
-                String checkSql = "SELECT COUNT(*) FROM blood_camps WHERE camp_date = ?";
-                PreparedStatement psCheck = conn.prepareStatement(checkSql);
-                psCheck.setString(1, date);
-                ResultSet rs = psCheck.executeQuery();
-                rs.next();
-                
-                if (rs.getInt(1) > 0) {
-                    JOptionPane.showMessageDialog(this, "A camp is already scheduled for " + date + "!", "Schedule Conflict", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                // Insertion Logic
                 String sql = "INSERT INTO blood_camps (camp_name, location, camp_date, camp_time, organizer) VALUES (?, ?, ?, ?, ?)";
                 PreparedStatement ps = conn.prepareStatement(sql);
                 ps.setString(1, txtName.getText());
                 ps.setString(2, txtLoc.getText());
-                ps.setString(3, date);
+                ps.setString(3, txtDate.getText());
                 ps.setString(4, txtTime.getText());
                 ps.setString(5, txtOrg.getText());
-
                 ps.executeUpdate();
                 JOptionPane.showMessageDialog(this, "Camp added successfully!");
-                txtName.setText(""); txtLoc.setText(""); txtDate.setText("YYYY-MM-DD");
-            } catch (SQLException ex) {
-                JOptionPane.showMessageDialog(this, "Database Error: " + ex.getMessage());
-            }
+                updateAllLiveCounts();
+            } catch (SQLException ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
         });
 
         mainPanel.add(btnSubmit);
         return mainPanel;
     }
+
     private JPanel createRoundedTableContainer(int x, int y, int w, int h) {
         JPanel container = new JPanel(new BorderLayout()) {
             @Override
@@ -519,66 +537,77 @@ public class AdminDashboard extends JFrame {
         return container;
     }
     
-   private JTable styleTable(JTable table) {
+    private JTable styleTable(JTable table) {
         table.setRowHeight(35);
-        table.setFont(new Font("Arial", Font.PLAIN, 15));
         table.getTableHeader().setBackground(new Color(160, 20, 20));
         table.getTableHeader().setForeground(Color.WHITE);
         table.getTableHeader().setFont(new Font("Arial", Font.BOLD, 14));
-        table.getTableHeader().setPreferredSize(new Dimension(100, 35));
         return table;
     }
 
     private void handleApproval(JTable table, DefaultTableModel model) {
         int row = table.getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a request!");
-            return;
-        }
+        if (row == -1) return;
         int reqId = (int) model.getValueAt(row, 0);
         String bGroup = (String) model.getValueAt(row, 2);
         int unitsRequired = (int) model.getValueAt(row, 3);
 
         try (Connection conn = DbConnection.connect()) {
-            // CHECKING: IF (units_available >= units_required)
             String checkSql = "SELECT units_available FROM blood_stock WHERE blood_group = ?";
             PreparedStatement psCheck = conn.prepareStatement(checkSql);
             psCheck.setString(1, bGroup);
             ResultSet rs = psCheck.executeQuery();
 
-            if (rs.next()) {
-                int available = rs.getInt("units_available");
-                if (available >= unitsRequired) {
-                    conn.setAutoCommit(false);
-                    // 1. Update Inventory
-                    PreparedStatement ps1 = conn.prepareStatement("UPDATE blood_stock SET units_available = units_available - ? WHERE blood_group = ?");
-                    ps1.setInt(1, unitsRequired);
-                    ps1.setString(2, bGroup);
-                    ps1.executeUpdate();
+            if (rs.next() && rs.getInt("units_available") >= unitsRequired) {
+                conn.setAutoCommit(false);
+                PreparedStatement ps1 = conn.prepareStatement("UPDATE blood_stock SET units_available = units_available - ? WHERE blood_group = ?");
+                ps1.setInt(1, unitsRequired);
+                ps1.setString(2, bGroup);
+                ps1.executeUpdate();
 
-                    // 2. Update Request
-                    PreparedStatement ps2 = conn.prepareStatement("UPDATE blood_requests SET status = 'Approved' WHERE request_id = ?");
-                    ps2.setInt(1, reqId);
-                    ps2.executeUpdate();
+                PreparedStatement ps2 = conn.prepareStatement("UPDATE blood_requests SET status = 'Approved' WHERE request_id = ?");
+                ps2.setInt(1, reqId);
+                ps2.executeUpdate();
 
-                    conn.commit();
-                    model.removeRow(row);
-                    fetchLiveStock();
-                    JOptionPane.showMessageDialog(this, "Success: Request Approved & Stock Updated!");
-                } else {
-                    // ELSE: Insufficient Blood
-                    JOptionPane.showMessageDialog(this, "Error: Insufficient Blood in Stock!", "Insufficient Blood", JOptionPane.ERROR_MESSAGE);
-                }
+                conn.commit();
+                model.removeRow(row);
+                updateAllLiveCounts();
+                JOptionPane.showMessageDialog(this, "Approved!");
+            } else {
+                JOptionPane.showMessageDialog(this, "Insufficient Blood Stock!");
             }
         } catch (SQLException ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
     }
+ private void RejectApproval(JTable table, DefaultTableModel model,String role) {
+        int row = table.getSelectedRow();
+        if (row == -1) return;
+        int reqId = (int) model.getValueAt(row, 0);
+        String bGroup = (String) model.getValueAt(row, 2);
+       // int unitsRequired = (int) model.getValueAt(row, 3);
 
-    // private JPanel createPlaceholderView(String name) {
-    //     JPanel p = new JPanel(new GridBagLayout());
-    //     p.setOpaque(false);
-    //     p.add(new JLabel(name + " Module Coming Soon..."));
-    //     return p;
-    // }
+        try (Connection conn = DbConnection.connect()) {
+            String checkSql = "SELECT units_available FROM blood_stock WHERE blood_group = ?";
+            PreparedStatement psCheck = conn.prepareStatement(checkSql);
+            psCheck.setString(1, bGroup);
+            ResultSet rs = psCheck.executeQuery();
+                 conn.setAutoCommit(false); 
+                 if(role.equals("User")){
+             PreparedStatement ps2 = conn.prepareStatement("UPDATE blood_requests SET status = 'REJECTED' WHERE request_id = ?");
+                ps2.setInt(1, reqId);
+                ps2.executeUpdate();
+                 }
+                 else if(role.equals("Hospital")){
+                     PreparedStatement ps2 = conn.prepareStatement("UPDATE Hospital_blood_requests SET status = 'REJECTED' WHERE request_id = ?");
+                    ps2.setInt(1, reqId);
+                    ps2.executeUpdate();
+                 }
+
+                conn.commit();
+                model.removeRow(row);
+                updateAllLiveCounts();
+                JOptionPane.showMessageDialog(this, "Request Rejected!");
+        } catch (SQLException ex) { JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage()); }
+    }
 
     private class LightPinkButton extends JButton {
         private boolean hovered = false;
@@ -632,5 +661,4 @@ public class AdminDashboard extends JFrame {
         card.add(valLabel);
         return card;
     }
-
 }
